@@ -1,0 +1,5 @@
+{
+  "name": "AI Presentation Generator",
+  "description": "Generate professional, infographic-style presentation slides for any company or product. Simply provide a name and target audience, and our AI will create a title slide and five content slides, combined into a downloadable PDF.",
+  "requestFramePermissions": []
+}
