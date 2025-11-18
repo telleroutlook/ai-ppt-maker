@@ -1,10 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
 import { InputForm } from './components/InputForm';
-import { ImageGrid } from './components/ImageGrid';
+import { DeckPreview } from './components/DeckPreview';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { Chatbot } from './components/Chatbot';
-import { DownloadIcon, SparklesIcon, ChatBubbleIcon, CloseIcon } from './components/icons';
+import { SparklesIcon, ChatBubbleIcon, CloseIcon } from './components/icons';
 import type { GeneratedImage } from './types';
 
 const PROGRESS_MESSAGES = [
@@ -30,6 +30,21 @@ const App: React.FC = () => {
     const [downloadError, setDownloadError] = useState<string | null>(null);
     const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
     const isDownloading = downloadState === 'pending';
+    const [slidesCompleted, setSlidesCompleted] = useState(0);
+    const [progressTotal, setProgressTotal] = useState(0);
+    const cacheRef = useRef(
+        new Map<string, { images: GeneratedImage[]; fallbackNotice: string | null }>()
+    );
+    const reportGenerationError = useCallback(
+        (err: unknown, fallback: string, overrideMessage?: string) => {
+            const message =
+                overrideMessage ??
+                (err instanceof Error ? err.message : typeof err === 'string' ? err : fallback);
+            console.error('Presentation generation error:', err);
+            setError(message);
+        },
+        []
+    );
 
     const handleGenerate = useCallback(async (product: string, targetAudience: string) => {
         const trimmedProduct = product.trim();
@@ -48,6 +63,21 @@ const App: React.FC = () => {
         setGeneratedImages([]);
         setProductName(trimmedProduct);
         setAudience(trimmedAudience);
+        setSlidesCompleted(0);
+        setProgressTotal(0);
+
+        const cacheKey = `${trimmedProduct.toLowerCase()}|${trimmedAudience.toLowerCase()}`;
+        const cachedResult = cacheRef.current.get(cacheKey);
+        if (cachedResult) {
+            setLoadingMessage('Reusing a recently generated deck for a faster preview...');
+            setFallbackNotice(cachedResult.fallbackNotice);
+            setGeneratedImages(cachedResult.images);
+            setSlidesCompleted(cachedResult.images.length);
+            setProgressTotal(cachedResult.images.length);
+            setIsLoading(false);
+            setLoadingMessage('');
+            return;
+        }
 
         try {
             setLoadingMessage('Planning your presentation structure...');
@@ -57,15 +87,17 @@ const App: React.FC = () => {
                 trimmedAudience
             );
 
-            setFallbackNotice(
-                usedFallbackSubjects
-                    ? fallbackReason ?? 'Fallback slides were used to keep the deck moving.'
-                    : null
-            );
+            const resolvedFallbackNotice = usedFallbackSubjects
+                ? fallbackReason ?? 'Fallback slides were used to keep the deck moving.'
+                : null;
+
+            setFallbackNotice(resolvedFallbackNotice);
 
             const slideResults: Array<GeneratedImage | null> = Array(prompts.length).fill(null);
             const slideErrors: Error[] = [];
             let nextPromptIndex = 0;
+            setSlidesCompleted(0);
+            setProgressTotal(prompts.length);
 
             const worker = async () => {
                 while (true) {
@@ -87,6 +119,7 @@ const App: React.FC = () => {
                         console.error('Slide generation error:', slideErr);
                         slideErrors.push(slideErr);
                     }
+                    setSlidesCompleted((prev) => prev + 1);
                 }
             };
 
@@ -102,19 +135,22 @@ const App: React.FC = () => {
             }
 
             setGeneratedImages(successfulImages);
+            if (slideErrors.length === 0) {
+                cacheRef.current.set(cacheKey, {
+                    images: successfulImages,
+                    fallbackNotice: resolvedFallbackNotice,
+                });
+            }
 
             if (slideErrors.length > 0) {
                 const slideErrorMessage = slideErrors[0]?.message ?? 'Slide generation failed for one or more prompts.';
                 setError(`Some slides could not be generated (${slideErrorMessage}). Displayed slides are ready to download.`);
             }
         } catch (err) {
-            console.error(err);
-            const rawMessage =
-                err instanceof Error ? err.message : 'An unexpected error occurred while generating slides.';
-            if (rawMessage.includes('API_KEY')) {
-                setError('API key is missing. Please set API_KEY and restart the app.');
+            if (err instanceof Error && err.message.includes('API_KEY')) {
+                reportGenerationError(err, '', 'API key is missing. Please set API_KEY and restart the app.');
             } else {
-                setError(rawMessage);
+                reportGenerationError(err, 'An unexpected error occurred while generating slides.');
             }
         } finally {
             setIsLoading(false);
@@ -170,45 +206,21 @@ const App: React.FC = () => {
                         <p className="text-lg text-sky-600 mt-4 animate-pulse" role="status" aria-live="polite">
                             {loadingMessage}
                         </p>
+                        {progressTotal > 0 && (
+                            <p className="text-sm text-slate-500">{slidesCompleted}/{progressTotal} slides ready</p>
+                        )}
                     </div>
                 )}
 
                 {generatedImages.length > 0 && !isLoading && (
-                    <div className="mt-12">
-                        <div className="text-center mb-8">
-                            <div className="flex flex-col items-center gap-3">
-                                <h3 className="text-2xl font-bold text-slate-800">Your Presentation is Ready!</h3>
-                                {fallbackNotice && (
-                                    <div className="inline-flex items-center gap-2 px-4 py-2 text-sm text-sky-700 bg-sky-50 border border-sky-200 rounded-full">
-                                        <SparklesIcon className="h-4 w-4 text-sky-500" />
-                                        <span>{fallbackNotice}</span>
-                                    </div>
-                                )}
-                                <button
-                                    onClick={handleDownloadPdf}
-                                    className="mt-2 inline-flex items-center gap-2 px-8 py-3 bg-green-500 text-white font-bold rounded-full hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
-                                    disabled={isDownloading}
-                                >
-                                    <DownloadIcon />
-                                    {isDownloading ? 'Preparing download...' : 'Download as PDF'}
-                                </button>
-                                {isDownloading && (
-                                    <p className="text-sm text-slate-600" aria-live="polite">
-                                        Preparing your PDF download...
-                                    </p>
-                                )}
-                                {downloadError && (
-                                    <div
-                                        className="max-w-xs text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg"
-                                        role="alert"
-                                    >
-                                        {downloadError}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <ImageGrid images={generatedImages} />
-                    </div>
+                    <DeckPreview
+                        images={generatedImages}
+                        fallbackNotice={fallbackNotice}
+                        productName={productName}
+                        isDownloading={isDownloading}
+                        downloadError={downloadError}
+                        onDownload={handleDownloadPdf}
+                    />
                 )}
 
                 {!isLoading && generatedImages.length === 0 && (
