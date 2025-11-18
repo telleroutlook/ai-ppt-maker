@@ -1,63 +1,53 @@
 
-# AI Coloring Book Creator
+# AI Presentation Generator
 
-Welcome to the AI Coloring Book Creator! This application allows you to generate personalized, printable coloring books for children. Simply provide a theme and a name, and our AI will create a custom cover and five unique coloring pages, all combined into a downloadable PDF.
+Generate infographic-style presentation slides in seconds. Provide a company or product name plus the audience you want to reach, and the app uses Google Gemini AI to create a title/hero slide plus five supporting slides. Each slide renders as a polished image you can download as a single PDF.
 
-## Features
+## Key Features
 
--   **AI-Powered Content:** Generates unique coloring pages based on any theme you can imagine.
--   **Personalization:** Creates a custom cover featuring your child's name.
--   **Print-Ready PDF:** Combines all pages into a single, high-quality PDF, ready for printing.
--   **Thick, Clean Lines:** Images are specifically designed with thick outlines suitable for coloring.
--   **Creative Assistant:** Includes a friendly chatbot to help you brainstorm fun themes.
+- **AI Slide Suggestions:** Gemini generates topic ideas tailored to your product and audience; curated fallbacks ensure coverage if the model is uncertain.
+- **Imagen Slide Assets:** Each prompt produces an infographic-style image with minimalist layouts, professional icons, and a vibrant business palette.
+- **Progressive UI:** Slide generation runs in parallel, shows a progress count, and caches recent decks for faster previews.
+- **PDF Export:** Builds an A4 landscape deck with jsPDF, embeds a Chinese-friendly font, and gracefully skips missing slides.
+- **Interactive Chatbot:** A Gemini-powered assistant helps you refine topics or troubleshoot presentation ideas without leaving the page.
 
-## Getting Started
+## Prerequisites
 
-Follow these instructions to get a copy of the project up and running on your local machine.
+- [Node.js](https://nodejs.org/) 18 (or later) and `npm`.
+- A Google Gemini API key stored in `API_KEY` (see configuration below).
 
-### Prerequisites
+## Setup
 
--   [Node.js](https://nodejs.org/) (v18 or later recommended)
--   A package manager like `npm` or `yarn`
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-username/ai-ppt-maker.git
+   cd ai-ppt-maker
+   ```
 
-### Installation & Configuration
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/ai-coloring-book-creator.git
-    cd ai-coloring-book-creator
-    ```
+3. **Configure the API key**
+   - Create a `.env` file in the project root.
+   - Add your Gemini key as `API_KEY=<your key>`.
+   - Restart the dev server if it was running.
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+You can obtain a Gemini API key via [Google AI Studio](https://ai.google.dev/).
 
-3.  **Set up your environment variables:**
-    This project requires a Google Gemini API key to function.
+## Development & Publishing
 
-    -   Create a new file named `.env` in the root of the project.
-    -   Copy the contents of `.env.example` into your new `.env` file.
-    -   Replace `YOUR_GEMINI_API_KEY` with your actual key.
+- `npm run dev` — start Vite’s development server (hot reloads at http://localhost:5173).
+- `npm run build` — bundle the production `dist/` output.
+- `npm run preview` — serve the production build locally for a final check.
 
-    Your `.env` file should look like this:
-    ```
-    API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-    ```
-    You can get your Gemini API key from [Google AI Studio](https://ai.google.dev/).
+## Manual Testing Notes
 
-### Running the Application
+Use the dev server to generate slides for a sample product, verify the preview updates per prompt, and ensure the PDF download includes all rendered slides. The chatbot panel remains open via the floating button if more guidance is needed.
 
-Once the installation and configuration are complete, you can start the development server:
+## Stack Highlights
 
-```bash
-npm start
-```
-
-This will open the application in your default web browser.
-
-## Technologies Used
-
--   **Frontend:** React, TypeScript, Tailwind CSS
--   **AI Model:** Google Gemini API (`gemini-2.5-flash` for text, `imagen-4.0-generate-001` for images)
--   **PDF Generation:** jsPDF
+- **Frameworks:** Vite + React 19 + TypeScript + Tailwind CSS utilities.
+- **AI Integrations:** `@google/genai` for Gemini text and Imagen image generation in `services/geminiService.ts`.
+- **PDF Engine:** `jspdf` with embedded `NotoSansSC` to avoid font issues when downloading decks in `services/pdfService.ts`.
