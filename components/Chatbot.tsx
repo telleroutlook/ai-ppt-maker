@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { getChatbotResponse } from '../services/geminiService';
 import type { ChatMessage } from '../types';
 import { SendIcon, CloseIcon } from './icons';
 
@@ -35,24 +34,36 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
     const handleSend = async () => {
         if (input.trim() === '' || isLoading) return;
 
+        const messageText = input;
         const userMessage: ChatMessage = {
             id: Date.now().toString(),
             role: 'user',
-            text: input,
+            text: messageText,
         };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
 
-        const responseText = await getChatbotResponse(input);
-        
-        const modelMessage: ChatMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'model',
-            text: responseText,
-        };
-        setMessages(prev => [...prev, modelMessage]);
-        setIsLoading(false);
+        try {
+            const { getChatbotResponse } = await import('../services/geminiService');
+            const responseText = await getChatbotResponse(messageText);
+            const modelMessage: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                role: 'model',
+                text: responseText,
+            };
+            setMessages(prev => [...prev, modelMessage]);
+        } catch (chatError) {
+            console.error('Chatbot error:', chatError);
+            const fallbackMessage: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                role: 'model',
+                text: 'I seem to be having trouble connecting. Please try again shortly.',
+            };
+            setMessages(prev => [...prev, fallbackMessage]);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {

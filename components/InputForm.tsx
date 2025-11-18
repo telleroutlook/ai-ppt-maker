@@ -12,8 +12,14 @@ export const InputForm: React.FC<InputFormProps> = ({ onGenerate, isLoading }) =
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onGenerate(product, audience);
+        const trimmedProduct = product.trim();
+        const trimmedAudience = audience.trim();
+
+        if (!trimmedProduct) return;
+        onGenerate(trimmedProduct, trimmedAudience);
     };
+
+    const isSubmitDisabled = isLoading || product.trim().length === 0;
 
     return (
         <form onSubmit={handleSubmit} className="max-w-xl mx-auto p-6 bg-white rounded-xl shadow-lg border border-slate-200 space-y-4">
@@ -42,7 +48,7 @@ export const InputForm: React.FC<InputFormProps> = ({ onGenerate, isLoading }) =
             </div>
             <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isSubmitDisabled}
                 className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:bg-sky-300 disabled:cursor-not-allowed transition-all duration-300 ease-in-out"
             >
                 {isLoading ? (
@@ -63,3 +69,4 @@ export const InputForm: React.FC<InputFormProps> = ({ onGenerate, isLoading }) =
         </form>
     );
 };
+

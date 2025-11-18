@@ -5,9 +5,16 @@ import { ImageGrid } from './components/ImageGrid';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { Chatbot } from './components/Chatbot';
 import { DownloadIcon, SparklesIcon, ChatBubbleIcon, CloseIcon } from './components/icons';
-import { generatePresentationSlides } from './services/geminiService';
-import { generatePdf } from './services/pdfService';
 import type { GeneratedImage } from './types';
+
+const PROGRESS_MESSAGES = [
+    'Designing the title and hero slide...',
+    'Highlighting key differentiators...',
+    'Visualizing standout product features...',
+    'Illustrating the primary use case...',
+    'Telling the customer success story...',
+    'Wrapping up with a memorable summary...',
+];
 
 const App: React.FC = () => {
     const [productName, setProductName] = useState<string>('');
@@ -19,42 +26,48 @@ const App: React.FC = () => {
     const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
     const handleGenerate = useCallback(async (product: string, targetAudience: string) => {
-        if (!product) {
+        const trimmedProduct = product.trim();
+        const trimmedAudience = targetAudience.trim();
+
+        if (!trimmedProduct) {
             setError('Please provide a company or product name.');
             return;
         }
+
         setIsLoading(true);
         setError(null);
         setGeneratedImages([]);
-        setProductName(product);
-        setAudience(targetAudience);
+        setProductName(trimmedProduct);
+        setAudience(trimmedAudience);
 
         try {
-            setLoadingMessage('Brainstorming presentation topics...');
-            const pages = await generatePresentationSlides(product, targetAudience);
-            
-            const messages = [
-                "Designing the title slide...",
-                "Visualizing key features...",
-                "Illustrating core benefits...",
-                "Crafting the use case slide...",
-                "Detailing the target market...",
-                "Finalizing the summary slide..."
-            ];
+            setLoadingMessage('Planning your presentation structure...');
+            const { generatePresentationPrompts, generateImageForPrompt } = await import('./services/geminiService');
+            const prompts = await generatePresentationPrompts(trimmedProduct, trimmedAudience);
 
-            const imagePromises = pages.map(async (page, index) => {
-                setLoadingMessage(messages[index] || `Generating slide ${index + 1}...`);
-                const response = await page.generationPromise;
-                const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-                return {
-                    src: `data:image/png;base64,${base64ImageBytes}`,
-                    alt: page.prompt
-                };
-            });
+            const newImages: GeneratedImage[] = [];
+            let encounteredSlideError = false;
 
-            const allImages = await Promise.all(imagePromises);
+            for (const [index, prompt] of prompts.entries()) {
+                setLoadingMessage(PROGRESS_MESSAGES[index] ?? `Generating slide ${index + 1}...`);
+                try {
+                    const imageSrc = await generateImageForPrompt(prompt);
+                    newImages.push({ src: imageSrc, alt: prompt });
+                } catch (slideError) {
+                    console.error('Slide generation error:', slideError);
+                    encounteredSlideError = true;
+                }
+            }
 
-            setGeneratedImages(allImages);
+            if (newImages.length === 0) {
+                throw new Error('No slides were generated.');
+            }
+
+            setGeneratedImages(newImages);
+
+            if (encounteredSlideError) {
+                setError('Some slides could not be generated. Displayed slides are ready to download.');
+            }
         } catch (err) {
             console.error(err);
             setError('An error occurred while generating the slides. Please try again.');
@@ -64,9 +77,15 @@ const App: React.FC = () => {
         }
     }, []);
 
-    const handleDownloadPdf = useCallback(() => {
+    const handleDownloadPdf = useCallback(async () => {
         if (generatedImages.length === 0) return;
-        generatePdf(generatedImages, productName);
+
+        try {
+            const { generatePdf } = await import('./services/pdfService');
+            generatePdf(generatedImages, productName);
+        } catch (downloadError) {
+            console.error('PDF download failed:', downloadError);
+        }
     }, [generatedImages, productName]);
 
     return (
@@ -81,7 +100,11 @@ const App: React.FC = () => {
                 <InputForm onGenerate={handleGenerate} isLoading={isLoading} />
 
                 {error && (
-                    <div className="max-w-3xl mx-auto mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                    <div
+                        className="max-w-3xl mx-auto mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg"
+                        role="alert"
+                        aria-live="assertive"
+                    >
                         {error}
                     </div>
                 )}
@@ -89,7 +112,9 @@ const App: React.FC = () => {
                 {isLoading && (
                     <div className="text-center my-12">
                         <LoadingSpinner />
-                        <p className="text-lg text-sky-600 mt-4 animate-pulse">{loadingMessage}</p>
+                        <p className="text-lg text-sky-600 mt-4 animate-pulse" role="status" aria-live="polite">
+                            {loadingMessage}
+                        </p>
                     </div>
                 )}
 

@@ -10,9 +10,29 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
       },
       plugins: [react()],
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks(id: string) {
+              if (id.includes('node_modules')) {
+                if (id.includes('@google/genai')) {
+                  return 'vendor-gemini';
+                }
+                if (id.includes('jspdf') || id.includes('dompurify') || id.includes('fflate')) {
+                  return 'vendor-pdf';
+                }
+                if (id.includes('html2canvas')) {
+                  return 'vendor-html2canvas';
+                }
+                return 'vendor';
+              }
+            },
+          },
+        },
+      },
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.API_KEY': JSON.stringify(env.API_KEY || env.GEMINI_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.API_KEY || env.GEMINI_API_KEY),
       },
       resolve: {
         alias: {

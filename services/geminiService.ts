@@ -1,8 +1,8 @@
-import { GoogleGenAI, Chat } from "@google/genai";
+import { GoogleGenAI, Chat } from '@google/genai';
 
 const API_KEY = process.env.API_KEY;
 if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
+    throw new Error('API_KEY environment variable not set');
 }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
@@ -14,36 +14,80 @@ const imageGenerationConfig = {
     aspectRatio: '1:1' as const,
 };
 
-const PROMPT_STYLE = "professional business presentation slide, infographic style, clean vector art, vibrant corporate color palette (blues, teals, grays), professional icons, minimalist design, on a clean white background. Contains space for a title and short descriptive text.";
+const PROMPT_STYLE =
+    'professional business presentation slide, infographic style, clean vector art, vibrant corporate color palette (blues, teals, grays), professional icons, minimalist design, on a clean white background. Contains space for a title and short descriptive text.';
 
-export const generatePresentationSlides = async (productName: string, audience: string) => {
+const FALLBACK_SUBJECTS = [
+    'Positioning and promise',
+    'Key differentiators',
+    'Product journey',
+    'Primary use cases',
+    'Customer outcomes and metrics',
+];
+
+const cleanSubjectTags = (text: string) =>
+    text
+        .split(/[,\n]/)
+        .map((value) => value.trim())
+        .map((value) => value.replace(/^"|"$/g, ''))
+        .filter(Boolean);
+
+const describeCoverPrompt = (productName: string, audienceContext: string) =>
+    `Title slide for a presentation about "${productName}". It should feature a clean, abstract logo representing technology and data, and the title "${productName}: An Overview". ${audienceContext} ${PROMPT_STYLE}`;
+
+const describeSubjectPrompt = (subject: string, productName: string, audienceContext: string) =>
+    `Presentation slide about "${subject}" for the product "${productName}". ${audienceContext} ${PROMPT_STYLE}`;
+
+export const generatePresentationPrompts = async (productName: string, audience: string) => {
     const audienceContext = audience ? `The target audience is ${audience}.` : '';
-
     const subjectPrompt = `List 5 key topics for an introductory presentation about "${productName}". The topics should be distinct and cover its purpose, key features, benefits, and primary use case. ${audienceContext} Just the list, comma separated.`;
-    
-    const subjectResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: subjectPrompt,
+
+    try {
+        const subjectResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: subjectPrompt,
+        });
+
+        const subjects = cleanSubjectTags(subjectResponse.text || '')
+            .slice(0, 5)
+            .filter(Boolean);
+        const sanitizedSubjects = [...new Set(subjects)];
+        const finalSubjects = sanitizedSubjects.length ? sanitizedSubjects : FALLBACK_SUBJECTS;
+
+        const coverPrompt = describeCoverPrompt(productName, audienceContext);
+        const pagePrompts = finalSubjects.map((subject) =>
+            describeSubjectPrompt(subject, productName, audienceContext)
+        );
+
+        return [coverPrompt, ...pagePrompts];
+    } catch (error) {
+        console.error('Subject generation failed, using fallback prompts.', error);
+        const coverPrompt = describeCoverPrompt(productName, audienceContext);
+        const pagePrompts = FALLBACK_SUBJECTS.map((subject) =>
+            describeSubjectPrompt(subject, productName, audienceContext)
+        );
+
+        return [coverPrompt, ...pagePrompts];
+    }
+};
+
+const extractImageBytes = (response: any) =>
+    response.generatedImages?.[0]?.image?.imageBytes;
+
+export const generateImageForPrompt = async (prompt: string) => {
+    const response = await ai.models.generateImages({
+        model: 'imagen-4.0-generate-001',
+        prompt,
+        config: imageGenerationConfig,
     });
 
-    const subjects = subjectResponse.text.split(',').map(s => s.trim()).slice(0, 5);
+    const imageBytes = extractImageBytes(response);
 
-    const coverPrompt = `Title slide for a presentation about "${productName}". It should feature a clean, abstract logo representing technology and data, and the title "${productName}: An Overview". ${PROMPT_STYLE}`;
-    
-    const pagePrompts = subjects.map(subject => 
-        `Presentation slide about "${subject}" for the product "${productName}". ${audienceContext} ${PROMPT_STYLE}`
-    );
+    if (!imageBytes) {
+        throw new Error('Image generation returned an empty response.');
+    }
 
-    const allPrompts = [coverPrompt, ...pagePrompts];
-
-    return allPrompts.map(prompt => ({
-        prompt,
-        generationPromise: ai.models.generateImages({
-            model: 'imagen-4.0-generate-001',
-            prompt,
-            config: imageGenerationConfig,
-        }),
-    }));
+    return `data:image/jpeg;base64,${imageBytes}`;
 };
 
 export const getChatbotResponse = async (message: string): Promise<string> => {
@@ -51,8 +95,9 @@ export const getChatbotResponse = async (message: string): Promise<string> => {
         chatInstance = ai.chats.create({
             model: 'gemini-2.5-flash',
             config: {
-                systemInstruction: "You are a professional business analyst and presentation assistant. You provide concise, professional advice on creating effective presentation slides. Help users refine topics for their presentations about companies and products."
-            }
+                systemInstruction:
+                    "You are a professional business analyst and presentation assistant. You provide concise, professional advice on creating effective presentation slides. Help users refine topics for their presentations about companies and products.",
+            },
         });
     }
 
@@ -60,7 +105,8 @@ export const getChatbotResponse = async (message: string): Promise<string> => {
         const result = await chatInstance.sendMessage({ message });
         return result.text;
     } catch (error) {
-        console.error("Chatbot error:", error);
-        return "I seem to be having trouble connecting. Please try again shortly.";
+        console.error('Chatbot error:', error);
+        return 'I seem to be having trouble connecting. Please try again shortly.';
     }
 };
+
