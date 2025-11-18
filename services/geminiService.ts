@@ -16,7 +16,7 @@ const imageGenerationConfig = {
 };
 
 const PROMPT_STYLE =
-    'professional business presentation slide, infographic style, clean vector art, vibrant corporate color palette (blues, teals, grays), professional icons, minimalist design, on a clean white background. Contains space for a title and short descriptive text.';
+    'professional business presentation slide, infographic style, clean vector art, vibrant corporate color palette (blues, teals, grays), professional icons, minimalist design, light-colored background, 16:9 aspect ratio, title positioned in the top-left corner, and space for short descriptive text.';
 
 const FALLBACK_SUBJECTS = [
     'Positioning and promise',

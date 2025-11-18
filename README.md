@@ -6,6 +6,7 @@ Generate infographic-style presentation slides in seconds. Provide a company or 
 ## Key Features
 
 - **AI Slide Suggestions:** Gemini generates topic ideas tailored to your product and audience; curated fallbacks ensure coverage if the model is uncertain.
+- **Prompt Style Defaults:** All image prompts are written in English, and when a user omits a visual style we request light-colored backgrounds, a 16:9 layout, and the slide title positioned in the top-left corner.
 - **Imagen Slide Assets:** Each prompt produces an infographic-style image with minimalist layouts, professional icons, and a vibrant business palette.
 - **Progressive UI:** Slide generation runs in parallel, shows a progress count, and caches recent decks for faster previews.
 - **PDF Export:** Builds an A4 landscape deck with jsPDF, embeds a Chinese-friendly font, and gracefully skips missing slides.
