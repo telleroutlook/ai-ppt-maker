@@ -16,6 +16,8 @@ const PROGRESS_MESSAGES = [
     'Wrapping up with a memorable summary...',
 ];
 
+const SLIDE_CONCURRENCY = 2;
+
 const App: React.FC = () => {
     const [productName, setProductName] = useState<string>('');
     const [audience, setAudience] = useState<string>('');
@@ -23,7 +25,11 @@ const App: React.FC = () => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [loadingMessage, setLoadingMessage] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
+    const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
+    const [downloadState, setDownloadState] = useState<'idle' | 'pending'>('idle');
+    const [downloadError, setDownloadError] = useState<string | null>(null);
     const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+    const isDownloading = downloadState === 'pending';
 
     const handleGenerate = useCallback(async (product: string, targetAudience: string) => {
         const trimmedProduct = product.trim();
@@ -36,6 +42,9 @@ const App: React.FC = () => {
 
         setIsLoading(true);
         setError(null);
+        setFallbackNotice(null);
+        setDownloadState('idle');
+        setDownloadError(null);
         setGeneratedImages([]);
         setProductName(trimmedProduct);
         setAudience(trimmedAudience);
@@ -43,34 +52,70 @@ const App: React.FC = () => {
         try {
             setLoadingMessage('Planning your presentation structure...');
             const { generatePresentationPrompts, generateImageForPrompt } = await import('./services/geminiService');
-            const prompts = await generatePresentationPrompts(trimmedProduct, trimmedAudience);
+            const { prompts, usedFallbackSubjects, fallbackReason } = await generatePresentationPrompts(
+                trimmedProduct,
+                trimmedAudience
+            );
 
-            const newImages: GeneratedImage[] = [];
-            let encounteredSlideError = false;
+            setFallbackNotice(
+                usedFallbackSubjects
+                    ? fallbackReason ?? 'Fallback slides were used to keep the deck moving.'
+                    : null
+            );
 
-            for (const [index, prompt] of prompts.entries()) {
-                setLoadingMessage(PROGRESS_MESSAGES[index] ?? `Generating slide ${index + 1}...`);
-                try {
-                    const imageSrc = await generateImageForPrompt(prompt);
-                    newImages.push({ src: imageSrc, alt: prompt });
-                } catch (slideError) {
-                    console.error('Slide generation error:', slideError);
-                    encounteredSlideError = true;
+            const slideResults: Array<GeneratedImage | null> = Array(prompts.length).fill(null);
+            const slideErrors: Error[] = [];
+            let nextPromptIndex = 0;
+
+            const worker = async () => {
+                while (true) {
+                    const promptIndex = nextPromptIndex;
+                    nextPromptIndex += 1;
+                    if (promptIndex >= prompts.length) {
+                        break;
+                    }
+
+                    const prompt = prompts[promptIndex];
+                    setLoadingMessage(PROGRESS_MESSAGES[promptIndex] ?? `Generating slide ${promptIndex + 1}...`);
+
+                    try {
+                        const imageSrc = await generateImageForPrompt(prompt);
+                        slideResults[promptIndex] = { src: imageSrc, alt: prompt };
+                    } catch (slideError) {
+                        const slideErr =
+                            slideError instanceof Error ? slideError : new Error('Slide generation failed.');
+                        console.error('Slide generation error:', slideErr);
+                        slideErrors.push(slideErr);
+                    }
                 }
-            }
+            };
 
-            if (newImages.length === 0) {
+            const workerCount = Math.min(prompts.length, SLIDE_CONCURRENCY);
+            await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+            const successfulImages = slideResults.filter(
+                (image): image is GeneratedImage => Boolean(image)
+            );
+
+            if (successfulImages.length === 0) {
                 throw new Error('No slides were generated.');
             }
 
-            setGeneratedImages(newImages);
+            setGeneratedImages(successfulImages);
 
-            if (encounteredSlideError) {
-                setError('Some slides could not be generated. Displayed slides are ready to download.');
+            if (slideErrors.length > 0) {
+                const slideErrorMessage = slideErrors[0]?.message ?? 'Slide generation failed for one or more prompts.';
+                setError(`Some slides could not be generated (${slideErrorMessage}). Displayed slides are ready to download.`);
             }
         } catch (err) {
             console.error(err);
-            setError('An error occurred while generating the slides. Please try again.');
+            const rawMessage =
+                err instanceof Error ? err.message : 'An unexpected error occurred while generating slides.';
+            if (rawMessage.includes('API_KEY')) {
+                setError('API key is missing. Please set API_KEY and restart the app.');
+            } else {
+                setError(rawMessage);
+            }
         } finally {
             setIsLoading(false);
             setLoadingMessage('');
@@ -80,11 +125,21 @@ const App: React.FC = () => {
     const handleDownloadPdf = useCallback(async () => {
         if (generatedImages.length === 0) return;
 
+        setDownloadState('pending');
+        setDownloadError(null);
+
         try {
             const { generatePdf } = await import('./services/pdfService');
-            generatePdf(generatedImages, productName);
+            await generatePdf(generatedImages, productName);
         } catch (downloadError) {
             console.error('PDF download failed:', downloadError);
+            const friendlyMessage =
+                downloadError instanceof Error
+                    ? downloadError.message
+                    : 'PDF download failed. Please try again.';
+            setDownloadError(friendlyMessage);
+        } finally {
+            setDownloadState('idle');
         }
     }, [generatedImages, productName]);
 
@@ -121,14 +176,36 @@ const App: React.FC = () => {
                 {generatedImages.length > 0 && !isLoading && (
                     <div className="mt-12">
                         <div className="text-center mb-8">
-                            <h3 className="text-2xl font-bold text-slate-800">Your Presentation is Ready!</h3>
-                            <button
-                                onClick={handleDownloadPdf}
-                                className="mt-4 inline-flex items-center gap-2 px-8 py-3 bg-green-500 text-white font-bold rounded-full hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105"
-                            >
-                                <DownloadIcon />
-                                Download as PDF
-                            </button>
+                            <div className="flex flex-col items-center gap-3">
+                                <h3 className="text-2xl font-bold text-slate-800">Your Presentation is Ready!</h3>
+                                {fallbackNotice && (
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 text-sm text-sky-700 bg-sky-50 border border-sky-200 rounded-full">
+                                        <SparklesIcon className="h-4 w-4 text-sky-500" />
+                                        <span>{fallbackNotice}</span>
+                                    </div>
+                                )}
+                                <button
+                                    onClick={handleDownloadPdf}
+                                    className="mt-2 inline-flex items-center gap-2 px-8 py-3 bg-green-500 text-white font-bold rounded-full hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-transform transform hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    disabled={isDownloading}
+                                >
+                                    <DownloadIcon />
+                                    {isDownloading ? 'Preparing download...' : 'Download as PDF'}
+                                </button>
+                                {isDownloading && (
+                                    <p className="text-sm text-slate-600" aria-live="polite">
+                                        Preparing your PDF download...
+                                    </p>
+                                )}
+                                {downloadError && (
+                                    <div
+                                        className="max-w-xs text-sm text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded-lg"
+                                        role="alert"
+                                    >
+                                        {downloadError}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <ImageGrid images={generatedImages} />
                     </div>

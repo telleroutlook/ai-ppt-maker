@@ -1,4 +1,5 @@
 import { GoogleGenAI, Chat } from '@google/genai';
+import type { PromptGenerationResult } from '../types';
 
 const API_KEY = process.env.API_KEY;
 if (!API_KEY) {
@@ -38,7 +39,10 @@ const describeCoverPrompt = (productName: string, audienceContext: string) =>
 const describeSubjectPrompt = (subject: string, productName: string, audienceContext: string) =>
     `Presentation slide about "${subject}" for the product "${productName}". ${audienceContext} ${PROMPT_STYLE}`;
 
-export const generatePresentationPrompts = async (productName: string, audience: string) => {
+export const generatePresentationPrompts = async (
+    productName: string,
+    audience: string
+): Promise<PromptGenerationResult> => {
     const audienceContext = audience ? `The target audience is ${audience}.` : '';
     const subjectPrompt = `List 5 key topics for an introductory presentation about "${productName}". The topics should be distinct and cover its purpose, key features, benefits, and primary use case. ${audienceContext} Just the list, comma separated.`;
 
@@ -52,14 +56,22 @@ export const generatePresentationPrompts = async (productName: string, audience:
             .slice(0, 5)
             .filter(Boolean);
         const sanitizedSubjects = [...new Set(subjects)];
-        const finalSubjects = sanitizedSubjects.length ? sanitizedSubjects : FALLBACK_SUBJECTS;
+        const usedFallbackSubjects = sanitizedSubjects.length === 0;
+        const finalSubjects = usedFallbackSubjects ? FALLBACK_SUBJECTS : sanitizedSubjects;
+        const fallbackReason = usedFallbackSubjects
+            ? 'Could not infer unique topics from Gemini; falling back to curated presentation subjects.'
+            : undefined;
 
         const coverPrompt = describeCoverPrompt(productName, audienceContext);
         const pagePrompts = finalSubjects.map((subject) =>
             describeSubjectPrompt(subject, productName, audienceContext)
         );
 
-        return [coverPrompt, ...pagePrompts];
+        return {
+            prompts: [coverPrompt, ...pagePrompts],
+            usedFallbackSubjects,
+            fallbackReason,
+        };
     } catch (error) {
         console.error('Subject generation failed, using fallback prompts.', error);
         const coverPrompt = describeCoverPrompt(productName, audienceContext);
@@ -67,7 +79,12 @@ export const generatePresentationPrompts = async (productName: string, audience:
             describeSubjectPrompt(subject, productName, audienceContext)
         );
 
-        return [coverPrompt, ...pagePrompts];
+        return {
+            prompts: [coverPrompt, ...pagePrompts],
+            usedFallbackSubjects: true,
+            fallbackReason:
+                'Subject generation failed; displaying curated fallback prompts that cover essential slide types.',
+        };
     }
 };
 
@@ -109,4 +126,3 @@ export const getChatbotResponse = async (message: string): Promise<string> => {
         return 'I seem to be having trouble connecting. Please try again shortly.';
     }
 };
-

@@ -9,3 +9,9 @@ export interface ChatMessage {
     role: 'user' | 'model';
     text: string;
 }
+
+export interface PromptGenerationResult {
+    prompts: string[];
+    usedFallbackSubjects: boolean;
+    fallbackReason?: string;
+}

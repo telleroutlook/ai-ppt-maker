@@ -82,6 +82,11 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
                     <CloseIcon />
                 </button>
             </header>
+            {isLoading && (
+                <div className="px-4 pb-2 text-xs text-slate-200 bg-slate-800 rounded-b-none">
+                    Chatbot thinking...
+                </div>
+            )}
 
             <div className="flex-1 p-4 overflow-y-auto bg-slate-50">
                 {messages.map(msg => (
